@@ -120,7 +120,8 @@ export class MongoDbAdapter {
 
 	/** Cursor for `find`, or the document count when `isCounting`. */
 	createCursor(params?: Filters, isCounting = false): any {
-		const fn = (query: Document) => (isCounting ? this.collection.countDocuments(query) : this.collection.find(query));
+		const fn = (query: Document) =>
+			isCounting ? this.collection.countDocuments(this.transformQueryIDs(query)) : this.collection.find(this.transformQueryIDs(query));
 		if (!params) return fn({});
 
 		let q: any;
@@ -140,6 +141,37 @@ export class MongoDbAdapter {
 			if (typeof params.limit === "number" && params.limit > 0) q.limit(params.limit);
 		}
 		return q;
+	}
+
+	/**
+	 * Makes ids sent as strings (e.g. JSON over HTTP) match ObjectId `_id`s, like `findById` does: in `_id`
+	 * (or the service's custom `idField`, renamed to `_id` like `beforeSaveTransformID`) a string accepted by
+	 * `stringToObjectID`, or the values of `$eq`/`$ne`/`$in`/`$nin`, becomes an ObjectId; `$and`/`$or`/`$nor`
+	 * branches are walked. Other strings stay strings. Returns a copy; `query` is not mutated.
+	 */
+	transformQueryIDs(query: Document): Document {
+		if (!query || typeof query !== "object" || Array.isArray(query)) return query;
+		const idField: string = (this.service?.settings as Record<string, any> | undefined)?.idField ?? "_id";
+		const out: Document = {};
+		for (const [key, value] of Object.entries(query)) {
+			if (key === "$and" || key === "$or" || key === "$nor") {
+				out[key] = Array.isArray(value) ? value.map((q) => this.transformQueryIDs(q)) : value;
+			} else if (key === "_id" || (key === idField && !("_id" in query))) {
+				out._id = this.transformIDCondition(value);
+			} else {
+				out[key] = value;
+			}
+		}
+		return out;
+	}
+
+	private transformIDCondition(value: any): any {
+		if (typeof value === "string") return this.stringToObjectID(value);
+		if (value === null || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) return value;
+		const out: Document = { ...value };
+		for (const op of ["$eq", "$ne"]) if (op in out) out[op] = this.stringToObjectID(out[op]);
+		for (const op of ["$in", "$nin"]) if (Array.isArray(out[op])) out[op] = out[op].map((v: any) => this.stringToObjectID(v));
+		return out;
 	}
 
 	/** `"-votes title"` / `["-votes", "title"]` -> `{ votes: -1, title: 1 }`. */

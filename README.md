@@ -47,6 +47,10 @@ Forced by the driver upgrade, invisible to moleculer-db:
 - Dotted field names (`{ "a.b": 1 }`) are stored as-is (driver 3.7 rejected them); needs MongoDB server >= 5.0.
 - Driver errors are the driver 6 ones (e.g. `MongoServerSelectionError`).
 
+Additions over upstream (a query that matched nothing before now matches):
+
+- `find`/`count` (with or without `search`) turn string ids in the query into ObjectIds, like `findById` does: `_id` as a string, and the values of `$eq`, `$ne`, `$in`, `$nin` on `_id`, also inside `$and`/`$or`/`$nor`. So `find({ query: { _id: "<24-hex>" } })` works when the query arrives as JSON. Strings `stringToObjectID` rejects (a 64-hex hash, a 12-char id) stay strings; only `_id` is touched. With a custom `idField`, a query on it is renamed to `_id`, as `beforeSaveTransformID` does on save.
+
 Exports: default and named `MongoDbAdapter`, type `Filters`.
 
 ## Design
