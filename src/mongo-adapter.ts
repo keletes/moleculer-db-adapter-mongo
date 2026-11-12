@@ -66,7 +66,7 @@ export class MongoDbAdapter {
 	}
 
 	findOne(query: Document) {
-		return this.collection.findOne(query);
+		return this.collection.findOne(this.transformQueryIDs(query));
 	}
 
 	findById(id: string) {
@@ -93,7 +93,7 @@ export class MongoDbAdapter {
 	}
 
 	async updateMany(query: Document, update: Document) {
-		return (await this.collection.updateMany(query, update)).modifiedCount;
+		return (await this.collection.updateMany(this.transformQueryIDs(query), update)).modifiedCount;
 	}
 
 	updateById(id: string, update: Document) {
@@ -101,7 +101,7 @@ export class MongoDbAdapter {
 	}
 
 	async removeMany(query: Document) {
-		return (await this.collection.deleteMany(query)).deletedCount;
+		return (await this.collection.deleteMany(this.transformQueryIDs(query))).deletedCount;
 	}
 
 	removeById(id: string) {
@@ -120,7 +120,8 @@ export class MongoDbAdapter {
 
 	/** Cursor for `find`, or the document count when `isCounting`. */
 	createCursor(params?: Filters, isCounting = false): any {
-		const fn = (query: Document) => (isCounting ? this.collection.countDocuments(query) : this.collection.find(query));
+		const fn = (query: Document) =>
+			isCounting ? this.collection.countDocuments(this.transformQueryIDs(query)) : this.collection.find(this.transformQueryIDs(query));
 		if (!params) return fn({});
 
 		let q: any;
@@ -140,6 +141,48 @@ export class MongoDbAdapter {
 			if (typeof params.limit === "number" && params.limit > 0) q.limit(params.limit);
 		}
 		return q;
+	}
+
+	/**
+	 * Makes ids sent as strings (e.g. JSON over HTTP) match ObjectId `_id`s, like `findById` does: in `_id`
+	 * (or the service's custom `idField`, renamed to `_id` like `beforeSaveTransformID`; next to an `_id` constraint it goes into an extra `$and` branch) a string accepted by
+	 * `stringToObjectID`, or the values of `$eq`/`$ne`/`$in`/`$nin`/`$all` (also under `$not`), becomes an ObjectId; `$and`/`$or`/`$nor`
+	 * branches are walked. Other strings stay strings. Returns a copy; `query` is not mutated.
+	 */
+	transformQueryIDs(query: Document): Document {
+		if (!this.isPlainObject(query)) return query;
+		const idField: string = (this.service?.settings as Record<string, any> | undefined)?.idField ?? "_id";
+		const out: Document = {};
+		let extra: Document | undefined; // constraint on a custom idField, next to one on `_id`
+		for (const [key, value] of Object.entries(query)) {
+			if (key === "$and" || key === "$or" || key === "$nor") {
+				out[key] = Array.isArray(value) ? value.map((q) => this.transformQueryIDs(q)) : value;
+			} else if (key === "_id") {
+				out._id = this.transformIDCondition(value);
+			} else if (key === idField && idField !== "_id") {
+				if ("_id" in query) extra = { _id: this.transformIDCondition(value) };
+				else out._id = this.transformIDCondition(value);
+			} else {
+				out[key] = value;
+			}
+		}
+		// both `_id` and the custom idField constrain the id: both apply
+		if (extra) out.$and = [...(Array.isArray(out.$and) ? out.$and : []), extra];
+		return out;
+	}
+
+	private isPlainObject(v: any): boolean {
+		return v !== null && typeof v === "object" && Object.prototype.toString.call(v) === "[object Object]" && !v._bsontype;
+	}
+
+	private transformIDCondition(value: any): any {
+		if (typeof value === "string") return this.stringToObjectID(value);
+		if (!this.isPlainObject(value)) return value;
+		const out: Document = { ...value };
+		for (const op of ["$eq", "$ne"]) if (op in out) out[op] = this.stringToObjectID(out[op]);
+		for (const op of ["$in", "$nin", "$all"]) if (Array.isArray(out[op])) out[op] = out[op].map((v: any) => this.stringToObjectID(v));
+		if ("$not" in out) out.$not = this.transformIDCondition(out.$not);
+		return out;
 	}
 
 	/** `"-votes title"` / `["-votes", "title"]` -> `{ votes: -1, title: 1 }`. */
@@ -181,6 +224,11 @@ export class MongoDbAdapter {
 		if (idField !== "_id") {
 			entity[idField] = this.objectIDToString(entity["_id"]);
 			delete entity._id;
+		} else if (entity._id) {
+			// moleculer-db's `get` with `mapping: true` builds the map key as `encodeID(<this result>._id)` from the raw
+			// document, while the returned entity (via `entityToObject`) already carries the string id: both must hand
+			// `encodeID` the same value, or a service whose `encodeID` expects a string fails/keys differently
+			entity._id = this.objectIDToString(entity._id);
 		}
 		return entity;
 	}

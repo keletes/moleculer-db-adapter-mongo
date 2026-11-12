@@ -47,6 +47,14 @@ Forced by the driver upgrade, invisible to moleculer-db:
 - Dotted field names (`{ "a.b": 1 }`) are stored as-is (driver 3.7 rejected them); needs MongoDB server >= 5.0.
 - Driver errors are the driver 6 ones (e.g. `MongoServerSelectionError`).
 
+Additions over upstream (a query that matched nothing before now matches):
+
+- `find`/`count` (with or without `search`), `findOne`, `updateMany` and `removeMany` turn string ids in the query into ObjectIds, like `findById` does: `_id` as a string, and the values of `$eq`, `$ne`, `$in`, `$nin`, `$all` on `_id` (also under `$not`), also inside `$and`/`$or`/`$nor`. So `find({ query: { _id: "<24-hex>" } })` works when the query arrives as JSON. Strings `stringToObjectID` rejects (a 64-hex hash, a 12-char id) stay strings; only `_id` is touched (not `"sub._id"`, not `$exists`/`$regex`/`$type`).
+- **Behaviour change:** a collection that stores 24-hex *strings* as `_id` no longer matches them in these queries (the same rule `findById` already applied); query such a collection through `adapter.collection` directly.
+- With a custom `idField`, a query on it is renamed to `_id`, as `beforeSaveTransformID` does on save; if the query also has `_id`, both constraints apply (the `idField` one goes into an extra `$and` branch).
+
+- `afterRetrieveTransformID` returns the string id also when `idField` is `_id`, so `get` with `mapping: true` calls `encodeID` with the same (string) value for the map key as for the document's id.
+
 Exports: default and named `MongoDbAdapter`, type `Filters`.
 
 ## Design
