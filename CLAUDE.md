@@ -24,7 +24,7 @@ CI (`verify.yml`) runs `verify` plus `test` on ubuntu x64 and ubuntu-24.04-arm; 
 - **mongod version is pinned in `package.json` `config.mongodbMemoryServer.version`**, read by both mongodb-memory-server's postinstall and `test/pin.ts`/`test/global-setup.ts`. Do not hard-code the version elsewhere. `MONGOMS_VERSION` overrides. `test/tests/mongod-pin.spec.ts` fails if the running mongod is not the pinned version or not built for the host arch. When bumping the pin, check a build exists for `ubuntu-24.04` on both x64 and arm64 (CI runners).
 - The CI mongod cache key is `hashFiles('package.json')`; any package.json change re-downloads once.
 - Server must be >= 5.0 (dotted field names).
-- Behaviour must stay a drop-in for `moleculer-db-adapter-mongo@0.4.21`; the differences are listed in the README and are driver-forced. The only additions are the string-id conversion in `find`/`count` queries (`transformQueryIDs`) and `afterRetrieveTransformID` always yielding a string id (README). Don't add opt-in behaviour to the adapter; a versioning/history mixin is a documented future option (README "Design"), not shipped.
+- Behaviour must stay a drop-in for `moleculer-db-adapter-mongo@0.4.21`; the differences are listed in the README and are driver-forced. The only additions are the string-id conversion in `find`/`count`/`findOne`/`updateMany`/`removeMany` queries (`transformQueryIDs`; a collection storing 24-hex strings as `_id` no longer matches them there, and a custom `idField` in a query is renamed to `_id`) and `afterRetrieveTransformID` always yielding a string id (README). Don't add opt-in behaviour to the adapter; a versioning/history mixin is a documented future option (README "Design"), not shipped.
 
 ## Releases: trunk-based, Conventional Commits
 
