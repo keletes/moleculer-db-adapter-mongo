@@ -51,6 +51,8 @@ Additions over upstream (a query that matched nothing before now matches):
 
 - `find`/`count` (with or without `search`) turn string ids in the query into ObjectIds, like `findById` does: `_id` as a string, and the values of `$eq`, `$ne`, `$in`, `$nin` on `_id`, also inside `$and`/`$or`/`$nor`. So `find({ query: { _id: "<24-hex>" } })` works when the query arrives as JSON. Strings `stringToObjectID` rejects (a 64-hex hash, a 12-char id) stay strings; only `_id` is touched. With a custom `idField`, a query on it is renamed to `_id`, as `beforeSaveTransformID` does on save.
 
+- `afterRetrieveTransformID` returns the string id also when `idField` is `_id`, so `get` with `mapping: true` calls `encodeID` with the same (string) value for the map key as for the document's id.
+
 Exports: default and named `MongoDbAdapter`, type `Filters`.
 
 ## Design

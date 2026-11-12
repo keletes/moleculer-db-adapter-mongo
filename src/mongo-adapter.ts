@@ -213,6 +213,11 @@ export class MongoDbAdapter {
 		if (idField !== "_id") {
 			entity[idField] = this.objectIDToString(entity["_id"]);
 			delete entity._id;
+		} else if (entity._id) {
+			// moleculer-db's `get` with `mapping: true` builds the map key as `encodeID(<this result>._id)` from the raw
+			// document, while the returned entity (via `entityToObject`) already carries the string id: both must hand
+			// `encodeID` the same value, or a service whose `encodeID` expects a string fails/keys differently
+			entity._id = this.objectIDToString(entity._id);
 		}
 		return entity;
 	}

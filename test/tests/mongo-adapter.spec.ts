@@ -261,7 +261,7 @@ describe("MongoDbAdapter", () => {
 
 		it("maps a custom idField on the way out", () => {
 			expect(adapter.afterRetrieveTransformID({ _id: id, a: 1 }, "id")).toEqual({ id: id.toHexString(), a: 1 });
-			expect(adapter.afterRetrieveTransformID({ _id: id, a: 1 }, "_id")).toEqual({ _id: id, a: 1 });
+			expect(adapter.afterRetrieveTransformID({ _id: id, a: 1 }, "_id")).toEqual({ _id: id.toHexString(), a: 1 });
 		});
 	});
 
