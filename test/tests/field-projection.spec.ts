@@ -1,23 +1,28 @@
 import { ServiceBroker } from "moleculer";
 import DbService from "moleculer-db";
-import MongoDbAdapter, { FieldProjectionMixin } from "../../src";
+import MongoDbAdapter from "../../src";
 
 describe("field projection", () => {
 	const broker = new ServiceBroker({ logger: false });
 	const collection = `proj_spec_${Date.now()}`;
 	const settings = { fields: ["_id", "name", "n", "meta", "meta.a", "meta.b", "meta.c.d"] };
 
-	const svc = (name: string, mixins: any[], extra: Record<string, any> = {}) =>
+	const svc = (name: string, mixins: any[], extra: Record<string, any> = {}, methods: Record<string, any> = {}) =>
 		broker.createService({
 			name,
 			mixins,
 			adapter: new MongoDbAdapter(`${process.env.MONGO_SERVER}`),
 			collection,
+			methods,
 			settings: { ...settings, ...extra },
 		});
-	svc("plain", [DbService]);
-	svc("proj", [FieldProjectionMixin, DbService]);
-	svc("renamed", [FieldProjectionMixin, DbService], { idField: "id", fields: ["id", "name", "n"] });
+	// a custom `_get` is left alone: this one is the unprojected baseline
+	const baseline = function (this: any, ctx: any, params: any) {
+		return (DbService as any).methods._get.call(this, ctx, params);
+	};
+	svc("plain", [DbService], {}, { _get: baseline });
+	svc("proj", [DbService]);
+	svc("renamed", [DbService], { idField: "id", fields: ["id", "name", "n"] });
 
 	const adapter = () => broker.getLocalService("plain").adapter;
 	let ids: string[];
@@ -74,7 +79,7 @@ describe("field projection", () => {
 		expect(await broker.call("proj.get", { id: ids[0], fields: ["meta.c.d"] })).toEqual({ meta: { c: { d: 3 } } });
 	});
 
-	it("projects in get only with the mixin", async () => {
+	it("projects in get unless the service has its own _get", async () => {
 		const spy = jest.spyOn(broker.getLocalService("proj").adapter, "findById");
 		await broker.call("proj.get", { id: ids[0], fields: ["n"] });
 		expect(spy).toHaveBeenCalledWith(ids[0], ["n"]);
