@@ -7,24 +7,18 @@ describe("field projection", () => {
 	const collection = `proj_spec_${Date.now()}`;
 	const settings = { fields: ["_id", "name", "n", "meta", "meta.a", "meta.b", "meta.c.d"] };
 
-	const svc = (name: string, mixins: any[], extra: Record<string, any> = {}, methods: Record<string, any> = {}) =>
+	const svc = (name: string, extra: Record<string, any> = {}) =>
 		broker.createService({
 			name,
-			mixins,
+			mixins: [DbService],
 			adapter: new MongoDbAdapter(`${process.env.MONGO_SERVER}`),
 			collection,
-			methods,
 			settings: { ...settings, ...extra },
 		});
-	// a custom `_get` is left alone: this one is the unprojected baseline
-	const baseline = function (this: any, ctx: any, params: any) {
-		return (DbService as any).methods._get.call(this, ctx, params);
-	};
-	svc("plain", [DbService], {}, { _get: baseline });
-	svc("proj", [DbService]);
-	svc("renamed", [DbService], { idField: "id", fields: ["id", "name", "n"] });
+	svc("items");
+	svc("renamed", { idField: "id", fields: ["id", "name", "n"] });
 
-	const adapter = () => broker.getLocalService("plain").adapter;
+	const adapter = () => broker.getLocalService("items").adapter;
 	let ids: string[];
 	beforeAll(async () => {
 		await broker.start();
@@ -67,30 +61,21 @@ describe("field projection", () => {
 		expect(Object.keys(rows[0]).sort()).toEqual(["_id", "_score", "n"]);
 	});
 
-	it("gives the same actions output with and without projection", async () => {
-		for (const params of [{ fields: ["name", "meta.a", "meta"] }, { fields: ["n", "meta.c.d"] }, {}, { fields: ["name"], excludeFields: ["name"] }]) {
-			expect(await broker.call("proj.find", { ...params, sort: "name" })).toEqual(await broker.call("plain.find", { ...params, sort: "name" }));
-			expect(await broker.call("proj.get", { id: ids[1], ...params })).toEqual(await broker.call("plain.get", { id: ids[1], ...params }));
-			expect(await broker.call("proj.get", { id: ids, ...params })).toEqual(await broker.call("plain.get", { id: ids, ...params }));
-			expect(await broker.call("proj.get", { id: ids, mapping: true, ...params })).toEqual(
-				await broker.call("plain.get", { id: ids, mapping: true, ...params }),
-			);
-		}
-		expect(await broker.call("proj.get", { id: ids[0], fields: ["meta.c.d"] })).toEqual({ meta: { c: { d: 3 } } });
+	it("gives the same find output as without projection", async () => {
+		const full = await adapter().find({ sort: "name" });
+		const projected = await adapter().find({ sort: "name", fields: ["n", "meta.c.d"] });
+		expect(projected.map((d: any) => d.n)).toEqual(full.map((d: any) => d.n));
+		expect(projected.map((d: any) => d.meta.c.d)).toEqual(full.map((d: any) => d.meta.c.d));
+		expect(await adapter().find({ sort: "name", fields: [] })).toEqual(full);
+		const meta: any[] = await broker.call("items.find", { fields: ["name", "meta.a", "meta"], sort: "name" });
+		expect(meta.map((r) => r.meta.c.e)).toEqual([4, 8]);
+		expect(await broker.call("items.find", { fields: ["meta.c.d"], sort: "name" })).toEqual([{ meta: { c: { d: 3 } } }, { meta: { c: { d: 7 } } }]);
 	});
 
-	it("projects in get unless the service has its own _get", async () => {
-		const spy = jest.spyOn(broker.getLocalService("proj").adapter, "findById");
-		await broker.call("proj.get", { id: ids[0], fields: ["n"] });
-		expect(spy).toHaveBeenCalledWith(ids[0], ["n"]);
-		const plainSpy = jest.spyOn(broker.getLocalService("plain").adapter, "findById");
-		await broker.call("plain.get", { id: ids[0], fields: ["n"] });
-		expect(plainSpy).toHaveBeenCalledWith(ids[0]);
-	});
-
-	it("works with a custom idField and maps through get", async () => {
-		const got: any = await broker.call("renamed.get", { id: ids[0], fields: ["id", "n"] });
-		expect(got).toEqual({ id: ids[0], n: 1 });
-		expect(await broker.call("renamed.get", { id: [ids[0]], mapping: true, fields: ["n"] })).toEqual({ [ids[0]]: { n: 1 } });
+	it("works with a custom idField", async () => {
+		expect(await broker.call("renamed.find", { fields: ["id", "n"], sort: "n" })).toEqual([
+			{ id: ids[0], n: 1 },
+			{ id: ids[1], n: 2 },
+		]);
 	});
 });

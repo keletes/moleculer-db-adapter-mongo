@@ -15,7 +15,6 @@
  */
 
 import { Errors } from "moleculer";
-import DbService from "moleculer-db";
 import type { Service, ServiceBroker } from "moleculer";
 import { Collection, Db, MongoClient, ObjectId } from "mongodb";
 import type { Document, MongoClientOptions, Sort } from "mongodb";
@@ -48,30 +47,6 @@ export class MongoDbAdapter {
 		this.service = service;
 		if (!(this.service.schema as Record<string, any>).collection)
 			throw new Errors.ServiceSchemaError("Missing `collection` definition in schema of service!", {});
-		this.projectGet(service as any);
-	}
-
-	/**
-	 * moleculer-db's `get` never hands `fields` to the adapter (it filters afterwards), so the service's `_get`
-	 * is replaced by moleculer-db's own, run with a `getById` that does. Skipped when the service has a custom
-	 * `_get`, and when `populate` is set (a populate rule may read an unrequested field).
-	 * TODO(2026-11-21): drop once moleculer-db's `_get` forwards `fields` to the adapter (upstream PR to follow).
-	 */
-	private projectGet(service: any) {
-		const original = (DbService as any).methods._get;
-		if (service.schema?.methods?._get !== original) return;
-		service._get = (ctx: any, params: any) => {
-			const fields = params.populate ? undefined : params.fields;
-			const proxy = Object.create(service, {
-				getById: {
-					value: async (id: any, decoding: boolean) => {
-						const decode = (i: any) => (decoding ? service.decodeID(i) : i);
-						return Array.isArray(id) ? this.findByIds(id.map(decode), fields) : this.findById(decode(id), fields);
-					},
-				},
-			});
-			return original.call(proxy, ctx, params);
-		};
 	}
 
 	async connect() {

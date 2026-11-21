@@ -41,7 +41,7 @@ After connecting, `this.adapter.client`, `.db` and `.collection` are the driver 
 
 `find` (and so `list`) reads only the dotted paths in `params.fields` from MongoDB, and `findById(id, fields?)` / `findByIds(ids, fields?)` take an optional `fields` argument. Only plain dotted names are used, a path under a requested parent is dropped, `_id` always comes back, no `fields` means no projection, and `populate` disables it (a populate rule may read a field that was not requested). Results are the same as without projection, since moleculer-db still filters afterwards.
 
-moleculer-db's `get` never hands `fields` to the adapter, so `init` replaces the service's `_get` with moleculer-db's own, run with a `getById` that does (unless the service defines its own `_get`). To be dropped once moleculer-db forwards `fields` itself.
+`get` is projected too when the moleculer-db in use forwards `fields` to `findById` / `findByIds` (stock moleculer-db does not: it filters afterwards).
 
 ### Differences from upstream 0.4.21
 
