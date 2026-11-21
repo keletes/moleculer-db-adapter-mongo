@@ -21,6 +21,8 @@ import type { Document, MongoClientOptions, Sort } from "mongodb";
 
 export interface Filters {
 	query?: Record<string, any>;
+	fields?: string | string[];
+	populate?: string | string[];
 	search?: string;
 	sort?: string | string[] | Record<string, 1 | -1>;
 	offset?: number;
@@ -69,12 +71,14 @@ export class MongoDbAdapter {
 		return this.collection.findOne(this.transformQueryIDs(query));
 	}
 
-	findById(id: string) {
-		return this.collection.findOne({ _id: this.stringToObjectID(id) });
+	findById(id: string, fields?: string | string[]) {
+		return this.collection.findOne({ _id: this.stringToObjectID(id) }, { projection: this.transformProjection(fields) });
 	}
 
-	findByIds(ids: string[]) {
-		return this.collection.find({ _id: { $in: ids.map((id) => this.stringToObjectID(id)) } }).toArray();
+	findByIds(ids: string[], fields?: string | string[]) {
+		return this.collection
+			.find({ _id: { $in: ids.map((id) => this.stringToObjectID(id)) } }, { projection: this.transformProjection(fields) })
+			.toArray();
 	}
 
 	count(filters: Filters = {}) {
@@ -125,12 +129,15 @@ export class MongoDbAdapter {
 		if (!params) return fn({});
 
 		let q: any;
+		// a populate rule may read a field that was not requested: no projection then
+		const projection = isCounting || params.populate ? undefined : this.transformProjection(params.fields);
 		if (typeof params.search === "string" && params.search !== "") {
 			// https://docs.mongodb.com/manual/reference/operator/query/text/
 			q = fn({ ...(params.query || {}), $text: { $search: params.search } });
-			if (!isCounting) q.project({ _score: { $meta: "textScore" } }).sort({ _score: { $meta: "textScore" } });
+			if (!isCounting) q.project({ ...projection, _score: { $meta: "textScore" } }).sort({ _score: { $meta: "textScore" } });
 		} else {
 			q = fn(params.query || {});
+			if (projection) q.project(projection);
 			if (params.sort && !isCounting) {
 				const sort = this.transformSort(params.sort);
 				if (sort) q.sort(sort);
@@ -183,6 +190,18 @@ export class MongoDbAdapter {
 		for (const op of ["$in", "$nin", "$all"]) if (Array.isArray(out[op])) out[op] = out[op].map((v: any) => this.stringToObjectID(v));
 		if ("$not" in out) out.$not = this.transformIDCondition(out.$not);
 		return out;
+	}
+
+	/**
+	 * `fields` (array, or a comma/space separated string) -> inclusion projection, or `undefined` for no
+	 * projection. A path whose parent is also requested is dropped (Mongo rejects both); `_id` always comes back.
+	 */
+	transformProjection(fields?: string | string[]): Record<string, 1> | undefined {
+		const list = typeof fields === "string" ? fields.split(/[,\s]+/) : fields;
+		if (!Array.isArray(list)) return undefined;
+		const paths = [...new Set(list.filter((f) => typeof f === "string" && /^[^$.\s]+(\.[^$.\s]+)*$/.test(f)))].sort();
+		const kept = paths.filter((p) => !paths.some((o) => p.startsWith(`${o}.`)));
+		return kept.length ? Object.fromEntries(kept.map((p) => [p, 1 as const])) : undefined;
 	}
 
 	/** `"-votes title"` / `["-votes", "title"]` -> `{ votes: -1, title: 1 }`. */
