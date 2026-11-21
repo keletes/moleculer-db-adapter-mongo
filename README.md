@@ -37,6 +37,12 @@ export default {
 `new MongoDbAdapter(uri, opts?, dbName?)`: `opts` are `MongoClientOptions`, `dbName` defaults to the one in the URI.
 After connecting, `this.adapter.client`, `.db` and `.collection` are the driver objects, for anything moleculer-db does not cover.
 
+### Field projection
+
+`find` (and so `list`) reads only the dotted paths in `params.fields` from MongoDB, and `findById(id, fields?)` / `findByIds(ids, fields?)` take an optional `fields` argument. Only plain dotted names are used, a path under a requested parent is dropped, `_id` always comes back, no `fields` means no projection, and `populate` disables it (a populate rule may read a field that was not requested). Results are the same as without projection, since moleculer-db still filters afterwards.
+
+moleculer-db's `get` never hands `fields` to the adapter, so `init` replaces the service's `_get` with moleculer-db's own, run with a `getById` that does (unless the service defines its own `_get`). This reimplements moleculer-db's `getById`: revisit if its `_get`/`getById` contract changes.
+
 ### Differences from upstream 0.4.21
 
 Forced by the driver upgrade, invisible to moleculer-db:
