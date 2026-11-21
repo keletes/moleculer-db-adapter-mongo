@@ -55,7 +55,7 @@ export class MongoDbAdapter {
 	 * moleculer-db's `get` never hands `fields` to the adapter (it filters afterwards), so the service's `_get`
 	 * is replaced by moleculer-db's own, run with a `getById` that does. Skipped when the service has a custom
 	 * `_get`, and when `populate` is set (a populate rule may read an unrequested field).
-	 * TODO(2026-11-21): drop once moleculer-db's `_get` forwards `fields` to the adapter (upstream PR to follow).
+	 * This reimplements moleculer-db's `getById` to forward `fields`: revisit if moleculer-db's `_get`/`getById` contract changes.
 	 */
 	private projectGet(service: any) {
 		const original = (DbService as any).methods._get;
